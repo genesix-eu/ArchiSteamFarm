@@ -18,13 +18,13 @@ export default {
             },
             {
                 legend: 'schema.misc',
+                advanced: true,
                 fields: [
                     {
                         type: 'InputCheckbox',
                         field: 'Statistics',
                         label: 'Statistics',
-                        defaultValue: true,
-                        advanced: true
+                        defaultValue: true
                     },
                     {
                         label: 'Blacklist',
@@ -36,34 +36,26 @@ export default {
                         label: 'CurrentCulture',
                         field: 'CurrentCulture',
                         type: 'InputText',
-                        placeholder: 'en-US',
-                        advanced: true
+                        placeholder: 'en-US'
                     },
                     {
                         label: 'MaxTradeHoldDuration',
                         field: 'MaxTradeHoldDuration',
                         placeholder: 15,
                         type: 'InputNumber',
-                        advanced: true,
                         validator: Validators.byte
                     }
                 ]
             },
             {
                 legend: 'schema.updates',
+                advanced: true,
                 fields: [
-                    {
-                        type: 'InputCheckbox',
-                        field: 'AutoUpdates',
-                        label: 'AutoUpdates',
-                        defaultValue: true
-                    },
                     {
                         type: 'InputCheckbox',
                         field: 'AutoRestart',
                         label: 'AutoRestart',
-                        defaultValue: true,
-                        advanced: true
+                        defaultValue: true
                     },
                     {
                         label: 'UpdateChannel',
@@ -74,8 +66,14 @@ export default {
                             { value: 1, name: 'Stable' },
                             { value: 2, name: 'Experimental' }
                         ],
-                        defaultValue: 1,
-                        advanced: true
+                        defaultValue: 1
+                    },
+                    {
+                        label: 'UpdatePeriod',
+                        field: 'UpdatePeriod',
+                        type: 'InputNumber',
+                        placeholder: 24,
+                        validator: Validators.byte
                     }
                 ]
             },
