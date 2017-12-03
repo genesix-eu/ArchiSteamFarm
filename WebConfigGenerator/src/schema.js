@@ -122,7 +122,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 3,
+                        defaultValue: 0,
                         advanced: true
                     },
                     {
@@ -630,7 +630,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 1,
+                        defaultValue: 0,
                         advanced: true
                     },
                     {
@@ -1131,7 +1131,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 1,
+                        defaultValue: 0,
                         advanced: true
                     },
                     {
