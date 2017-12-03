@@ -1,7 +1,7 @@
 import Validators from './validators';
 
 export default {
-    'V3.0.4.9+': {
+    'V3.0.5.0+': {
         asf: [
             {
                 legend: 'schema.basic',
@@ -88,6 +88,12 @@ export default {
                         type: 'InputText'
                     },
                     {
+                        label: 'IPCPassword',
+                        field: 'IPCPassword',
+                        placeholder: '',
+                        type: 'InputPassword'
+                    },
+                    {
                         label: 'IPCPort',
                         field: 'IPCPort',
                         placeholder: 1242,
@@ -116,7 +122,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 0,
+                        defaultValue: 3,
                         advanced: true
                     },
                     {
@@ -624,7 +630,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 0,
+                        defaultValue: 1,
                         advanced: true
                     },
                     {
@@ -1125,7 +1131,7 @@ export default {
                             { value: 2, name: 'UDP' },
                             { value: 4, name: 'WebSocket' }
                         ],
-                        defaultValue: 0,
+                        defaultValue: 1,
                         advanced: true
                     },
                     {
