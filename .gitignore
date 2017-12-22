@@ -17,6 +17,7 @@ ArchiSteamFarm/debug
 # Ignore out folders for publishing
 out
 ArchiSteamFarm/out
+ArchiSteamFarm/_win64
 
 # Ignore crowdin CLI secret
 tools/crowdin-cli/crowdin_identity.yaml
