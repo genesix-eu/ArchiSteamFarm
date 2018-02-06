@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,7 +39,7 @@ namespace ArchiSteamFarm {
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		internal static void Forget(this object obj) { }
 
-		internal static string GetArgsString(string[] args, byte argsToSkip = 1, string delimiter = " ") {
+		internal static string GetArgsString(string[] args, byte argsToSkip, string delimiter = " ") {
 			if ((args == null) || (args.Length < argsToSkip) || string.IsNullOrEmpty(delimiter)) {
 				ASF.ArchiLogger.LogNullError(nameof(args) + " || " + nameof(delimiter));
 				return null;
@@ -101,6 +101,21 @@ namespace ArchiSteamFarm {
 		internal static int RandomNext() {
 			lock (Random) {
 				return Random.Next();
+			}
+		}
+
+		internal static int RandomNext(int maxWithout) {
+			if (maxWithout <= 0) {
+				ASF.ArchiLogger.LogNullError(nameof(maxWithout));
+				return -1;
+			}
+
+			if (maxWithout == 1) {
+				return 0;
+			}
+
+			lock (Random) {
+				return Random.Next(maxWithout);
 			}
 		}
 
@@ -166,7 +181,7 @@ namespace ArchiSteamFarm {
 
 		internal static string ToHumanReadable(this TimeSpan timeSpan) => timeSpan.Humanize(3, maxUnit: TimeUnit.Year);
 
-		private static string[] GetArgs(string[] args, byte argsToSkip = 1) {
+		private static string[] GetArgs(string[] args, byte argsToSkip) {
 			if ((args == null) || (args.Length < argsToSkip)) {
 				ASF.ArchiLogger.LogNullError(nameof(args));
 				return null;

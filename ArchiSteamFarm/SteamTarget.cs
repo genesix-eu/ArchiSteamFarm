@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,9 +43,12 @@ namespace ArchiSteamFarm {
 		public ulong SteamID { get; set; }
 
 		// This constructor is intentionally public, as NLog uses it for creating targets
-		// It must stay like this as we want to have SteamTargets defined in our NLog.config
+		// It must stay like this as we want to have our targets defined in our NLog.config
 		// Keeping date in default layout also doesn't make much sense, so we remove it by default
-		public SteamTarget() => Layout = "${level:uppercase=true}|${logger}|${message}";
+		public SteamTarget(string name = null) {
+			Name = name;
+			Layout = "${level:uppercase=true}|${logger}|${message}";
+		}
 
 		protected override async void Write(LogEventInfo logEvent) {
 			if (logEvent == null) {

@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,13 +61,7 @@ namespace ArchiSteamFarm {
 		// This constructor is used only by deserializer
 		private BotDatabase() { }
 
-		public void Dispose() {
-			// Those are objects that are always being created if constructor doesn't throw exception
-			FileSemaphore.Dispose();
-
-			// Those are objects that might be null and the check should be in-place
-			MobileAuthenticator?.Dispose();
-		}
+		public void Dispose() => FileSemaphore.Dispose();
 
 		internal async Task AddBlacklistedFromTradesSteamIDs(IReadOnlyCollection<ulong> steamIDs) {
 			if ((steamIDs == null) || (steamIDs.Count == 0)) {
@@ -251,11 +245,12 @@ namespace ArchiSteamFarm {
 
 			await FileSemaphore.WaitAsync().ConfigureAwait(false);
 
-			if (ReadOnly) {
-				return;
-			}
-
 			try {
+				if (ReadOnly) {
+					return;
+				}
+
+				// We always want to write entire content to temporary file first, in order to never load corrupted data, also when target file doesn't exist
 				await File.WriteAllTextAsync(newFilePath, json).ConfigureAwait(false);
 
 				if (File.Exists(FilePath)) {

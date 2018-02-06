@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -110,6 +110,9 @@ namespace ArchiSteamFarm {
 				);
 
 				return Encoding.UTF8.GetString(decryptedData);
+			} catch (PlatformNotSupportedException e) {
+				ASF.ArchiLogger.LogGenericWarningException(e);
+				return null;
 			} catch (Exception e) {
 				ASF.ArchiLogger.LogGenericException(e);
 				return null;
@@ -151,6 +154,9 @@ namespace ArchiSteamFarm {
 				);
 
 				return Convert.ToBase64String(encryptedData);
+			} catch (PlatformNotSupportedException e) {
+				ASF.ArchiLogger.LogGenericWarningException(e);
+				return null;
 			} catch (Exception e) {
 				ASF.ArchiLogger.LogGenericException(e);
 				return null;

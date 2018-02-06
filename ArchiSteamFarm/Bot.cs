@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +22,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -65,6 +64,8 @@ namespace ArchiSteamFarm {
 		internal bool HasMobileAuthenticator => BotDatabase?.MobileAuthenticator != null;
 		internal bool IsAccountLimited => AccountFlags.HasFlag(EAccountFlags.LimitedUser) || AccountFlags.HasFlag(EAccountFlags.LimitedUserForce);
 		internal bool IsConnectedAndLoggedOn => SteamID != 0;
+
+		[JsonProperty]
 		internal bool IsPlayingPossible => !PlayingBlocked && (LibraryLockedBySteamID == 0);
 
 		private readonly ArchiHandler ArchiHandler;
@@ -116,6 +117,10 @@ namespace ArchiSteamFarm {
 		private EAccountFlags AccountFlags;
 
 		private string AuthCode;
+
+		[JsonProperty]
+		private string AvatarHash;
+
 		private Timer CardsFarmerResumeTimer;
 		private Timer ConnectionFailureTimer;
 		private string DeviceID;
@@ -126,6 +131,7 @@ namespace ArchiSteamFarm {
 		private EResult LastLogOnResult;
 		private ulong LibraryLockedBySteamID;
 		private bool LootingAllowed = true;
+		private bool LootingScheduled;
 		private bool PlayingBlocked;
 		private Timer PlayingWasBlockedTimer;
 		private bool ReconnectOnUserInitiated;
@@ -348,14 +354,15 @@ namespace ArchiSteamFarm {
 			return null;
 		}
 
-		internal async Task<(uint PlayableAppID, DateTime IgnoredUntil)> GetAppDataForIdling(uint appID, float hoursPlayed, bool allowRecursiveDiscovery = true) {
+		internal async Task<(uint PlayableAppID, DateTime IgnoredUntil)> GetAppDataForIdling(uint appID, float hoursPlayed, bool allowRecursiveDiscovery = true, bool optimisticDiscovery = true) {
 			if ((appID == 0) || (hoursPlayed < 0)) {
 				ArchiLogger.LogNullError(nameof(appID) + " || " + nameof(hoursPlayed));
 				return (0, DateTime.MaxValue);
 			}
 
 			if ((hoursPlayed < CardsFarmer.HoursForRefund) && !BotConfig.IdleRefundableGames) {
-				if (!Program.GlobalDatabase.AppIDsToPackageIDs.TryGetValue(appID, out ConcurrentHashSet<uint> packageIDs)) {
+				HashSet<uint> packageIDs = Program.GlobalDatabase.GetPackageIDs(appID);
+				if (packageIDs == null) {
 					return (0, DateTime.MaxValue);
 				}
 
@@ -372,7 +379,7 @@ namespace ArchiSteamFarm {
 						}
 					}
 
-					if (mostRecent != DateTime.MinValue) {
+					if (mostRecent > DateTime.MinValue) {
 						DateTime playableIn = mostRecent.AddDays(CardsFarmer.DaysForRefund);
 						if (playableIn > DateTime.UtcNow) {
 							return (0, playableIn);
@@ -385,7 +392,7 @@ namespace ArchiSteamFarm {
 
 			for (byte i = 0; (i < WebBrowser.MaxTries) && (productInfoResultSet == null); i++) {
 				if (!IsConnectedAndLoggedOn) {
-					return (0, DateTime.MaxValue);
+					return (optimisticDiscovery ? appID : 0, DateTime.MinValue);
 				}
 
 				await PICSSemaphore.WaitAsync().ConfigureAwait(false);
@@ -400,7 +407,7 @@ namespace ArchiSteamFarm {
 			}
 
 			if (productInfoResultSet == null) {
-				return (0, DateTime.MaxValue);
+				return (optimisticDiscovery ? appID : 0, DateTime.MinValue);
 			}
 
 			foreach (Dictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo> productInfoApps in productInfoResultSet.Results.Select(result => result.Apps)) {
@@ -465,7 +472,7 @@ namespace ArchiSteamFarm {
 				}
 
 				if (!allowRecursiveDiscovery) {
-					return (0, DateTime.MaxValue);
+					return (0, DateTime.MinValue);
 				}
 
 				string listOfDlc = productInfo["extended"]["listofdlc"].Value;
@@ -480,7 +487,7 @@ namespace ArchiSteamFarm {
 						break;
 					}
 
-					(uint playableAppID, _) = await GetAppDataForIdling(dlcAppID, hoursPlayed, false).ConfigureAwait(false);
+					(uint playableAppID, _) = await GetAppDataForIdling(dlcAppID, hoursPlayed, false, false).ConfigureAwait(false);
 					if (playableAppID != 0) {
 						return (playableAppID, DateTime.MinValue);
 					}
@@ -490,89 +497,10 @@ namespace ArchiSteamFarm {
 			}
 
 			if (!productInfoResultSet.Complete || productInfoResultSet.Failed) {
-				return (0, DateTime.MaxValue);
+				return (optimisticDiscovery ? appID : 0, DateTime.MinValue);
 			}
 
 			return (appID, DateTime.MinValue);
-		}
-
-		internal async Task<Dictionary<uint, HashSet<uint>>> GetAppIDsToPackageIDs(IReadOnlyCollection<uint> packageIDs) {
-			if ((packageIDs == null) || (packageIDs.Count == 0)) {
-				ArchiLogger.LogNullError(nameof(packageIDs));
-				return null;
-			}
-
-			AsyncJobMultiple<SteamApps.PICSProductInfoCallback>.ResultSet productInfoResultSet = null;
-
-			for (byte i = 0; (i < WebBrowser.MaxTries) && (productInfoResultSet == null); i++) {
-				if (!IsConnectedAndLoggedOn) {
-					return null;
-				}
-
-				await PICSSemaphore.WaitAsync().ConfigureAwait(false);
-
-				try {
-					productInfoResultSet = await SteamApps.PICSGetProductInfo(Enumerable.Empty<uint>(), packageIDs);
-				} catch (Exception e) {
-					ArchiLogger.LogGenericWarningException(e);
-				} finally {
-					PICSSemaphore.Release();
-				}
-			}
-
-			if (productInfoResultSet == null) {
-				return null;
-			}
-
-			Dictionary<uint, HashSet<uint>> result = new Dictionary<uint, HashSet<uint>>();
-
-			foreach (KeyValuePair<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo> productInfoPackages in productInfoResultSet.Results.SelectMany(productInfoResult => productInfoResult.Packages)) {
-				KeyValue productInfo = productInfoPackages.Value.KeyValues;
-				if (productInfo == KeyValue.Invalid) {
-					ArchiLogger.LogNullError(nameof(productInfo));
-					return null;
-				}
-
-				KeyValue apps = productInfo["appids"];
-				if (apps == KeyValue.Invalid) {
-					continue;
-				}
-
-				if (apps.Children.Count == 0) {
-					if (!result.TryGetValue(0, out HashSet<uint> packages)) {
-						packages = new HashSet<uint>();
-						result[0] = packages;
-					}
-
-					packages.Add(productInfoPackages.Key);
-					continue;
-				}
-
-				foreach (string app in apps.Children.Select(app => app.Value)) {
-					if (!uint.TryParse(app, out uint appID) || (appID == 0)) {
-						ArchiLogger.LogNullError(nameof(appID));
-						return null;
-					}
-
-					if (!result.TryGetValue(appID, out HashSet<uint> packages)) {
-						packages = new HashSet<uint>();
-						result[appID] = packages;
-					}
-
-					packages.Add(productInfoPackages.Key);
-				}
-			}
-
-			foreach (uint packageID in productInfoResultSet.Results.SelectMany(productInfoResult => productInfoResult.UnknownPackages)) {
-				if (!result.TryGetValue(0, out HashSet<uint> packages)) {
-					packages = new HashSet<uint>();
-					result[0] = packages;
-				}
-
-				packages.Add(packageID);
-			}
-
-			return result;
 		}
 
 		internal static HashSet<Bot> GetBots(string args) {
@@ -625,6 +553,90 @@ namespace ArchiSteamFarm {
 				result.Add(targetBot);
 			}
 
+			return result;
+		}
+
+		internal async Task<Dictionary<uint, (uint ChangeNumber, HashSet<uint> AppIDs)>> GetPackagesData(IReadOnlyCollection<uint> packageIDs) {
+			if ((packageIDs == null) || (packageIDs.Count == 0)) {
+				ArchiLogger.LogNullError(nameof(packageIDs));
+				return null;
+			}
+
+			AsyncJobMultiple<SteamApps.PICSProductInfoCallback>.ResultSet productInfoResultSet = null;
+
+			for (byte i = 0; (i < WebBrowser.MaxTries) && (productInfoResultSet == null); i++) {
+				if (!IsConnectedAndLoggedOn) {
+					return null;
+				}
+
+				await PICSSemaphore.WaitAsync().ConfigureAwait(false);
+
+				try {
+					productInfoResultSet = await SteamApps.PICSGetProductInfo(Enumerable.Empty<uint>(), packageIDs);
+				} catch (Exception e) {
+					ArchiLogger.LogGenericWarningException(e);
+				} finally {
+					PICSSemaphore.Release();
+				}
+			}
+
+			if (productInfoResultSet == null) {
+				return null;
+			}
+
+			Dictionary<uint, (uint ChangeNumber, HashSet<uint> AppIDs)> result = new Dictionary<uint, (uint ChangeNumber, HashSet<uint> AppIDs)>();
+
+			foreach (SteamApps.PICSProductInfoCallback.PICSProductInfo productInfo in productInfoResultSet.Results.SelectMany(productInfoResult => productInfoResult.Packages).Select(productInfoPackages => productInfoPackages.Value)) {
+				if (productInfo.KeyValues == KeyValue.Invalid) {
+					ArchiLogger.LogNullError(nameof(productInfo));
+					return null;
+				}
+
+				(uint ChangeNumber, HashSet<uint> AppIDs) value = (productInfo.ChangeNumber, null);
+
+				try {
+					KeyValue appIDs = productInfo.KeyValues["appids"];
+					if (appIDs == KeyValue.Invalid) {
+						continue;
+					}
+
+					value.AppIDs = new HashSet<uint>();
+
+					foreach (string appIDText in appIDs.Children.Select(app => app.Value)) {
+						if (!uint.TryParse(appIDText, out uint appID) || (appID == 0)) {
+							ArchiLogger.LogNullError(nameof(appID));
+							return null;
+						}
+
+						value.AppIDs.Add(appID);
+					}
+				} finally {
+					result[productInfo.ID] = value;
+				}
+			}
+
+			return result;
+		}
+
+		internal async Task<byte?> GetTradeHoldDuration(ulong steamID, ulong tradeID) {
+			if ((steamID == 0) || (tradeID == 0)) {
+				ArchiLogger.LogNullError(nameof(steamID) + " || " + nameof(tradeID));
+				return null;
+			}
+
+			if (SteamFriends.GetFriendRelationship(steamID) == EFriendRelationship.Friend) {
+				return await ArchiWebHandler.GetTradeHoldDurationForUser(steamID).ConfigureAwait(false);
+			}
+
+			Bot targetBot = Bots.Values.FirstOrDefault(bot => bot.CachedSteamID == steamID);
+			if (targetBot != null) {
+				string targetTradeToken = await targetBot.ArchiWebHandler.GetTradeToken().ConfigureAwait(false);
+				if (!string.IsNullOrEmpty(targetTradeToken)) {
+					return await ArchiWebHandler.GetTradeHoldDurationForUser(steamID, targetTradeToken).ConfigureAwait(false);
+				}
+			}
+
+			byte? result = await ArchiWebHandler.GetTradeHoldDurationForTrade(tradeID).ConfigureAwait(false);
 			return result;
 		}
 
@@ -884,7 +896,7 @@ namespace ArchiSteamFarm {
 							goto default;
 						case "!LOOT":
 							return await ResponseLoot(steamID).ConfigureAwait(false);
-						case "!LOOT^":
+						case "!LOOT&":
 							return ResponseLootSwitch(steamID);
 						case "!PASSWORD":
 							return ResponsePassword(steamID);
@@ -992,15 +1004,25 @@ namespace ArchiSteamFarm {
 						case "!LOOT":
 							return await ResponseLoot(steamID, Utilities.GetArgsString(args, 1, ",")).ConfigureAwait(false);
 						case "!LOOT^":
+							if (args.Length > 3) {
+								return await ResponseAdvancedLoot(steamID, args[1], args[2], Utilities.GetArgsString(args, 3, ",")).ConfigureAwait(false);
+							}
+
+							if (args.Length > 2) {
+								return await ResponseAdvancedLoot(steamID, args[1], args[2]).ConfigureAwait(false);
+							}
+
+							goto default;
+						case "!LOOT&":
 							return await ResponseLootSwitch(steamID, Utilities.GetArgsString(args, 1, ",")).ConfigureAwait(false);
 						case "!NICKNAME":
 							if (args.Length > 2) {
 								return await ResponseNickname(steamID, args[1], Utilities.GetArgsString(args, 2)).ConfigureAwait(false);
 							}
 
-							return await ResponseNickname(steamID, args[1]).ConfigureAwait(false);
+							return ResponseNickname(steamID, args[1]);
 						case "!OA":
-							return await ResponseOwns(steamID, SharedInfo.ASF, Utilities.GetArgsString(args)).ConfigureAwait(false);
+							return await ResponseOwns(steamID, SharedInfo.ASF, Utilities.GetArgsString(args, 1)).ConfigureAwait(false);
 						case "!OWNS":
 							if (args.Length > 2) {
 								return await ResponseOwns(steamID, args[1], Utilities.GetArgsString(args, 2)).ConfigureAwait(false);
@@ -1015,7 +1037,7 @@ namespace ArchiSteamFarm {
 							return await ResponsePause(steamID, Utilities.GetArgsString(args, 1, ","), false).ConfigureAwait(false);
 						case "!PAUSE&":
 							if (args.Length > 2) {
-								return await ResponsePause(steamID, args[1], true, args[2]).ConfigureAwait(false);
+								return await ResponsePause(steamID, args[1], true, Utilities.GetArgsString(args, 2, ",")).ConfigureAwait(false);
 							}
 
 							return await ResponsePause(steamID, true, args[1]).ConfigureAwait(false);
@@ -1055,7 +1077,7 @@ namespace ArchiSteamFarm {
 							return await ResponseStop(steamID, Utilities.GetArgsString(args, 1, ",")).ConfigureAwait(false);
 						case "!TRANSFER":
 							if (args.Length > 3) {
-								return await ResponseTransfer(steamID, args[1], args[2], args[3]).ConfigureAwait(false);
+								return await ResponseTransfer(steamID, args[1], args[2], Utilities.GetArgsString(args, 3, ",")).ConfigureAwait(false);
 							}
 
 							if (args.Length > 2) {
@@ -1182,7 +1204,7 @@ namespace ArchiSteamFarm {
 			return null;
 		}
 
-		private ulong GetFirstSteamMasterID() => BotConfig.SteamUserPermissions.Where(kv => (kv.Key != 0) && (kv.Key != CachedSteamID) && (kv.Value == BotConfig.EPermission.Master)).Select(kv => kv.Key).OrderBy(steamID => steamID).FirstOrDefault();
+		private ulong GetFirstSteamMasterID() => BotConfig.SteamUserPermissions.Where(kv => (kv.Key != 0) && (kv.Value == BotConfig.EPermission.Master)).Select(kv => kv.Key).OrderByDescending(steamID => steamID != CachedSteamID).ThenBy(steamID => steamID).FirstOrDefault();
 
 		private BotConfig.EPermission GetSteamUserPermission(ulong steamID) {
 			if (steamID != 0) {
@@ -1368,7 +1390,7 @@ namespace ArchiSteamFarm {
 				SteamSaleEvent = null;
 			}
 
-			if (BotConfig.AutoDiscoveryQueue) {
+			if (BotConfig.AutoSteamSaleEvent) {
 				SteamSaleEvent = new SteamSaleEvent(this);
 			}
 		}
@@ -1620,7 +1642,7 @@ namespace ArchiSteamFarm {
 
 			EResult lastLogOnResult = LastLogOnResult;
 			LastLogOnResult = EResult.Invalid;
-			HeartBeatFailures = 0;
+			ItemsCount = TradesCount = HeartBeatFailures = 0;
 			StopConnectionFailureTimer();
 			StopPlayingWasBlockedTimer();
 
@@ -1807,14 +1829,26 @@ namespace ArchiSteamFarm {
 			}
 
 			OwnedPackageIDs.Clear();
+
+			bool refreshData = !BotConfig.IdleRefundableGames || (BotConfig.FarmingOrder == BotConfig.EFarmingOrder.RedeemDateTimesAscending) || (BotConfig.FarmingOrder == BotConfig.EFarmingOrder.RedeemDateTimesDescending);
+			Dictionary<uint, uint> packagesToRefresh = new Dictionary<uint, uint>();
+
 			foreach (SteamApps.LicenseListCallback.License license in callback.LicenseList) {
 				OwnedPackageIDs[license.PackageID] = (license.PaymentMethod, license.TimeCreated);
+
+				if (!refreshData) {
+					continue;
+				}
+
+				if (!Program.GlobalDatabase.PackagesData.TryGetValue(license.PackageID, out (uint ChangeNumber, HashSet<uint> _) packageData) || (packageData.ChangeNumber < license.LastChangeNumber)) {
+					packagesToRefresh[license.PackageID] = (uint) license.LastChangeNumber;
+				}
 			}
 
-			if (OwnedPackageIDs.Count > 0) {
-				if (!BotConfig.IdleRefundableGames || (BotConfig.FarmingOrder == BotConfig.EFarmingOrder.RedeemDateTimesAscending) || (BotConfig.FarmingOrder == BotConfig.EFarmingOrder.RedeemDateTimesDescending)) {
-					Program.GlobalDatabase.RefreshPackageIDs(this, OwnedPackageIDs.Keys.ToImmutableHashSet()).Forget();
-				}
+			if (packagesToRefresh.Count > 0) {
+				ArchiLogger.LogGenericInfo(Strings.BotRefreshingPackagesData);
+				await Program.GlobalDatabase.RefreshPackages(this, packagesToRefresh).ConfigureAwait(false);
+				ArchiLogger.LogGenericInfo(Strings.Done);
 			}
 
 			// Wait a second for eventual PlayingSessionStateCallback or SharedLibraryLockStatusCallback
@@ -1962,11 +1996,7 @@ namespace ArchiSteamFarm {
 					}
 
 					if (!BotConfig.FarmOffline) {
-						try {
-							await SteamFriends.SetPersonaState(EPersonaState.Online);
-						} catch (Exception) {
-							// TODO: We intentionally ignore this exception since SteamFriends.SetPersonaState() task seems to always throw TaskCanceledException, https://github.com/SteamRE/SteamKit/issues/491
-						}
+						SteamFriends.SetPersonaState(EPersonaState.Online);
 					}
 
 					break;
@@ -2077,7 +2107,18 @@ namespace ArchiSteamFarm {
 			}
 
 			if (callback.FriendID == CachedSteamID) {
-				Statistics?.OnPersonaState(callback).Forget();
+				string avatarHash = null;
+
+				if ((callback.AvatarHash != null) && (callback.AvatarHash.Length > 0) && callback.AvatarHash.Any(singleByte => singleByte != 0)) {
+					avatarHash = BitConverter.ToString(callback.AvatarHash).Replace("-", "").ToLowerInvariant();
+
+					if (string.IsNullOrEmpty(avatarHash) || avatarHash.All(singleChar => singleChar == '0')) {
+						avatarHash = null;
+					}
+				}
+
+				AvatarHash = avatarHash;
+				Statistics?.OnPersonaState(callback.Name, avatarHash).Forget();
 			} else if ((callback.FriendID == LibraryLockedBySteamID) && (callback.GameID == 0)) {
 				LibraryLockedBySteamID = 0;
 				await CheckOccupationStatus().ConfigureAwait(false);
@@ -2373,6 +2414,118 @@ namespace ArchiSteamFarm {
 			}
 
 			IEnumerable<Task<string>> tasks = bots.Select(bot => bot.ResponseAddLicense(steamID, targetGameIDs));
+			ICollection<string> results;
+
+			switch (Program.GlobalConfig.OptimizationMode) {
+				case GlobalConfig.EOptimizationMode.MinMemoryUsage:
+					results = new List<string>(bots.Count);
+					foreach (Task<string> task in tasks) {
+						results.Add(await task.ConfigureAwait(false));
+					}
+
+					break;
+				default:
+					results = await Task.WhenAll(tasks).ConfigureAwait(false);
+					break;
+			}
+
+			List<string> responses = new List<string>(results.Where(result => !string.IsNullOrEmpty(result)));
+			return responses.Count > 0 ? string.Join("", responses) : null;
+		}
+
+		private async Task<string> ResponseAdvancedLoot(ulong steamID, string targetAppID, string targetContextID) {
+			if ((steamID == 0) || string.IsNullOrEmpty(targetAppID) || string.IsNullOrEmpty(targetContextID)) {
+				ArchiLogger.LogNullError(nameof(steamID) + " || " + nameof(targetAppID) + " || " + nameof(targetContextID));
+				return null;
+			}
+
+			if (!IsMaster(steamID)) {
+				return null;
+			}
+
+			if (!IsConnectedAndLoggedOn) {
+				return FormatBotResponse(Strings.BotNotConnected);
+			}
+
+			if (!uint.TryParse(targetAppID, out uint appID) || (appID == 0)) {
+				return FormatBotResponse(string.Format(Strings.ErrorIsInvalid, nameof(appID)));
+			}
+
+			if (!byte.TryParse(targetContextID, out byte contextID) || (contextID == 0)) {
+				return FormatBotResponse(string.Format(Strings.ErrorIsInvalid, nameof(contextID)));
+			}
+
+			if (!LootingAllowed) {
+				return FormatBotResponse(Strings.BotLootingTemporarilyDisabled);
+			}
+
+			if (BotConfig.LootableTypes.Count == 0) {
+				return FormatBotResponse(Strings.BotLootingNoLootableTypes);
+			}
+
+			ulong targetSteamMasterID = GetFirstSteamMasterID();
+			if (targetSteamMasterID == 0) {
+				return FormatBotResponse(Strings.BotLootingMasterNotDefined);
+			}
+
+			if (targetSteamMasterID == CachedSteamID) {
+				return FormatBotResponse(Strings.BotSendingTradeToYourself);
+			}
+
+			lock (LootingSemaphore) {
+				if (LootingScheduled) {
+					return FormatBotResponse(Strings.Done);
+				}
+
+				LootingScheduled = true;
+			}
+
+			await LootingSemaphore.WaitAsync().ConfigureAwait(false);
+
+			try {
+				lock (LootingSemaphore) {
+					LootingScheduled = false;
+				}
+
+				HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMyInventory(true, appID, contextID).ConfigureAwait(false);
+				if ((inventory == null) || (inventory.Count == 0)) {
+					return FormatBotResponse(string.Format(Strings.ErrorIsEmpty, nameof(inventory)));
+				}
+
+				if (!await ArchiWebHandler.MarkSentTrades().ConfigureAwait(false)) {
+					return FormatBotResponse(Strings.BotLootingFailed);
+				}
+
+				if (!await ArchiWebHandler.SendTradeOffer(inventory, targetSteamMasterID, BotConfig.SteamTradeToken).ConfigureAwait(false)) {
+					return FormatBotResponse(Strings.BotLootingFailed);
+				}
+
+				if (HasMobileAuthenticator) {
+					// Give Steam network some time to generate confirmations
+					await Task.Delay(3000).ConfigureAwait(false);
+					if (!await AcceptConfirmations(true, Steam.ConfirmationDetails.EType.Trade, targetSteamMasterID).ConfigureAwait(false)) {
+						return FormatBotResponse(Strings.BotLootingFailed);
+					}
+				}
+			} finally {
+				LootingSemaphore.Release();
+			}
+
+			return FormatBotResponse(Strings.BotLootingSuccess);
+		}
+
+		private static async Task<string> ResponseAdvancedLoot(ulong steamID, string botNames, string appID, string contextID) {
+			if ((steamID == 0) || string.IsNullOrEmpty(botNames) || string.IsNullOrEmpty(appID) || string.IsNullOrEmpty(contextID)) {
+				ASF.ArchiLogger.LogNullError(nameof(steamID) + " || " + nameof(botNames) + " || " + nameof(appID) + " || " + nameof(contextID));
+				return null;
+			}
+
+			HashSet<Bot> bots = GetBots(botNames);
+			if ((bots == null) || (bots.Count == 0)) {
+				return IsOwner(steamID) ? FormatStaticResponse(string.Format(Strings.BotNotFound, botNames)) : null;
+			}
+
+			IEnumerable<Task<string>> tasks = bots.Select(bot => bot.ResponseAdvancedLoot(steamID, appID, contextID));
 			ICollection<string> results;
 
 			switch (Program.GlobalConfig.OptimizationMode) {
@@ -3185,12 +3338,22 @@ namespace ArchiSteamFarm {
 				return FormatBotResponse(Strings.BotSendingTradeToYourself);
 			}
 
-			if (!LootingSemaphore.Wait(0)) {
-				return FormatBotResponse(Strings.BotLootingFailed);
+			lock (LootingSemaphore) {
+				if (LootingScheduled) {
+					return FormatBotResponse(Strings.Done);
+				}
+
+				LootingScheduled = true;
 			}
 
+			await LootingSemaphore.WaitAsync().ConfigureAwait(false);
+
 			try {
-				HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMySteamInventory(true, BotConfig.LootableTypes).ConfigureAwait(false);
+				lock (LootingSemaphore) {
+					LootingScheduled = false;
+				}
+
+				HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMyInventory(true, wantedTypes: BotConfig.LootableTypes).ConfigureAwait(false);
 				if ((inventory == null) || (inventory.Count == 0)) {
 					return FormatBotResponse(string.Format(Strings.ErrorIsEmpty, nameof(inventory)));
 				}
@@ -3293,7 +3456,7 @@ namespace ArchiSteamFarm {
 			return responses.Count > 0 ? string.Join("", responses) : null;
 		}
 
-		private async Task<string> ResponseNickname(ulong steamID, string nickname) {
+		private string ResponseNickname(ulong steamID, string nickname) {
 			if ((steamID == 0) || string.IsNullOrEmpty(nickname)) {
 				ArchiLogger.LogNullError(nameof(steamID) + " || " + nameof(nickname));
 				return null;
@@ -3307,19 +3470,7 @@ namespace ArchiSteamFarm {
 				return FormatBotResponse(Strings.BotNotConnected);
 			}
 
-			SteamFriends.PersonaChangeCallback result;
-
-			try {
-				result = await SteamFriends.SetPersonaName(nickname);
-			} catch (Exception e) {
-				ArchiLogger.LogGenericWarningException(e);
-				return FormatBotResponse(Strings.WarningFailed);
-			}
-
-			if ((result == null) || (result.Result != EResult.OK)) {
-				return FormatBotResponse(Strings.WarningFailed);
-			}
-
+			SteamFriends.SetPersonaName(nickname);
 			return FormatBotResponse(Strings.Done);
 		}
 
@@ -3334,7 +3485,7 @@ namespace ArchiSteamFarm {
 				return IsOwner(steamID) ? FormatStaticResponse(string.Format(Strings.BotNotFound, botNames)) : null;
 			}
 
-			IEnumerable<Task<string>> tasks = bots.Select(bot => bot.ResponseNickname(steamID, nickname));
+			IEnumerable<Task<string>> tasks = bots.Select(bot => Task.Run(() => bot.ResponseNickname(steamID, nickname)));
 			ICollection<string> results;
 
 			switch (Program.GlobalConfig.OptimizationMode) {
@@ -4095,7 +4246,7 @@ namespace ArchiSteamFarm {
 				return null;
 			}
 
-			ushort memoryInMegabytes = (ushort) (GC.GetTotalMemory(true) / 1024 / 1024);
+			ushort memoryInMegabytes = (ushort) (GC.GetTotalMemory(false) / 1024 / 1024);
 			return FormatBotResponse(string.Format(Strings.BotStats, memoryInMegabytes));
 		}
 
@@ -4134,7 +4285,7 @@ namespace ArchiSteamFarm {
 			}
 
 			if (CardsFarmer.CurrentGamesFarming.Count > 1) {
-				return (FormatBotResponse(string.Format(Strings.BotStatusIdlingList, string.Join(", ", CardsFarmer.CurrentGamesFarming.Select(game => game.AppID)), CardsFarmer.GamesToFarm.Count, CardsFarmer.GamesToFarm.Sum(game => game.CardsRemaining), CardsFarmer.TimeRemaining.ToHumanReadable())), this);
+				return (FormatBotResponse(string.Format(Strings.BotStatusIdlingList, string.Join(", ", CardsFarmer.CurrentGamesFarming.Select(game => game.AppID + " (" + game.GameName + ")")), CardsFarmer.GamesToFarm.Count, CardsFarmer.GamesToFarm.Sum(game => game.CardsRemaining), CardsFarmer.TimeRemaining.ToHumanReadable())), this);
 			}
 
 			CardsFarmer.Game soloGame = CardsFarmer.CurrentGamesFarming.First();
@@ -4303,12 +4454,22 @@ namespace ArchiSteamFarm {
 				}
 			}
 
-			if (!LootingSemaphore.Wait(0)) {
-				return FormatBotResponse(Strings.BotLootingFailed);
+			lock (LootingSemaphore) {
+				if (LootingScheduled) {
+					return FormatBotResponse(Strings.Done);
+				}
+
+				LootingScheduled = true;
 			}
 
+			await LootingSemaphore.WaitAsync().ConfigureAwait(false);
+
 			try {
-				HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMySteamInventory(true, transferTypes).ConfigureAwait(false);
+				lock (LootingSemaphore) {
+					LootingScheduled = false;
+				}
+
+				HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMyInventory(true, wantedTypes: transferTypes).ConfigureAwait(false);
 				if ((inventory == null) || (inventory.Count == 0)) {
 					return FormatBotResponse(string.Format(Strings.ErrorIsEmpty, nameof(inventory)));
 				}
@@ -4398,7 +4559,7 @@ namespace ArchiSteamFarm {
 				return FormatBotResponse(Strings.BotNotConnected);
 			}
 
-			HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMySteamInventory(false, new HashSet<Steam.Asset.EType> { Steam.Asset.EType.BoosterPack }).ConfigureAwait(false);
+			HashSet<Steam.Asset> inventory = await ArchiWebHandler.GetMyInventory(false, wantedTypes: new HashSet<Steam.Asset.EType> { Steam.Asset.EType.BoosterPack }).ConfigureAwait(false);
 			if ((inventory == null) || (inventory.Count == 0)) {
 				return FormatBotResponse(string.Format(Strings.ErrorIsEmpty, nameof(inventory)));
 			}

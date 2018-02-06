@@ -1,0 +1,249 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>ArchiSteamFarm | Config Manager</title>
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-sweetalert/1.0.1/sweetalert.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.2/css/AdminLTE.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.2/css/skins/_all-skins.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700,300italic,400italic,600italic">
+    <link rel="stylesheet" href="../css/app.css">
+    <link rel="icon" href="../favicon.png" type="image/png">
+    <link rel="shortcut icon" href="../favicon.ico" type="img/x-icon">
+</head>
+<body class="hold-transition skin-blue sidebar-mini fixed">
+    <div class="wrapper">
+        <!-- Main Header -->
+        <header class="main-header">
+            <!-- Logo -->
+            <a href="#" class="logo">
+                <!-- mini logo for sidebar mini 50x50 pixels -->
+                <span class="logo-mini"><b>A</b>SF</span>
+                <!-- logo for regular state and mobile devices -->
+                <span class="logo-lg"><b>Archi</b>SteamFarm</span>
+            </a>
+
+            <!-- Header Navbar -->
+            <nav class="navbar navbar-static-top" role="navigation">
+                <!-- Sidebar toggle button-->
+                <a href="#" class="sidebar-toggle" data-navigation="leftSidebar" data-toggle="push-menu" role="button">
+                    <span class="sr-only">Toggle navigation</span>
+                </a>
+                <!-- Navbar Right Menu -->
+                <div class="navbar-custom-menu">
+                    <ul class="nav navbar-nav">
+                        <!-- Control Sidebar Toggle Button -->
+                        <li>
+                            <a href="#" data-toggle="control-sidebar"><i class="fa fa-gears"></i></a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+        </header>
+        <!-- Left side column. contains the logo and sidebar -->
+        <aside class="main-sidebar">
+            <section class="sidebar">
+
+                <!-- Sidebar Menu -->
+                <ul class="sidebar-menu" data-widget="tree">
+                    <li class="header">HOME</li>
+                    <li><a href="command.html"><i class="fa fa-laptop"></i> <span>Command</span></a></li>
+                    <li>
+                        <a href="bots.html">
+                            <i class="fa fa-users"></i> <span>Bots</span>
+                            <span class="pull-right-container bot-status">
+                                <small class="label pull-right bg-gray" id="offlineBots">0</small>
+                                <small class="label pull-right bg-yellow" id="idleBots">0</small>
+                                <small class="label pull-right bg-green" id="activeBots">0</small>
+                            </span>
+                        </a>
+                    </li>
+                    <li><a href="log.html"><i class="fa fa-file-text-o"></i> <span>Log</span></a></li>
+                    <li class="active"><a href="config.html"><i class="fa fa-cogs"></i> <span>Config</span></a></li>
+
+                    <li class="header">INFORMATION</li>
+                    <li class="info-overview">
+                        <a href="#">
+                            <i class="fa fa-tachometer"></i> <span>RAM Usage</span>
+                            <span class="pull-right-container">
+                                <small class="label pull-right bg-blue" id="ramUsage">0.00 MB</small>
+                            </span>
+                        </a>
+                    </li>
+                    <li class="info-overview">
+                        <a href="#">
+                            <i class="fa fa-clock-o"></i> <span>Uptime</span>
+                            <span class="pull-right-container">
+                                <small class="label pull-right bg-blue" id="uptime">0d 0h 0m</small>
+                            </span>
+                        </a>
+                    </li>
+                </ul>
+            </section>
+        </aside>
+
+        <!-- Content Wrapper. Contains page content -->
+        <div class="content-wrapper">
+            <!-- Content Header (Page header) -->
+            <section class="content-header">
+                <h1>
+                    Config
+                    <small>Control Panel</small>
+                </h1>
+                <ol class="breadcrumb">
+                    <li><i class="fa fa-home"></i> Home</li>
+                    <li class="active"><i class="fa fa-cogs"></i> Config</li>
+                </ol>
+            </section>
+
+            <!-- Main content -->
+            <section class="content container-fluid">
+                <div class="nav-tabs-custom">
+                    <ul class="nav nav-tabs">
+                        <li class="active"><a href="#configManager" data-toggle="tab" aria-expanded="true"><i class="fa fa-wrench"></i> Manager</a></li>
+                        <li class="pull-right"><a href="#configGenerator" data-toggle="tab" aria-expanded="false"><i class="fa fa-file-text-o"></i> Generator</a></li>
+                    </ul>
+                    <div class="tab-content no-padding">
+                        <div class="tab-pane active" id="configManager">
+                            <div class="callout callout-warning margin">
+                                <h4><i class="icon fa fa-warning"></i> Under development</h4>
+                                <p>This feature is currently being developed.</p>
+                            </div>
+                            <div class="box-header">
+                                <h3 class="box-title">Currently editing:</h3>
+                                <div class="box-tools pull-right">
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+                                            Change Bot
+                                            <span class="fa fa-caret-down"></span>
+                                        </button>
+                                        <ul class="dropdown-menu scrollable-menu" id="botsDropDownManager"></ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="box-body">
+                                <div class="form-group">
+                                    <label for="inputBotName">Bot Name</label>
+                                    <div class="input-group">
+                                        <span class="input-group-addon"><i class="fa fa-user"></i></span>
+                                        <input type="text" id="inputBotName" class="form-control" placeholder="Bot name">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="inputSteamName">Steam Name</label>
+                                    <div class="input-group">
+                                        <span class="input-group-addon"><i class="fa fa-user"></i></span>
+                                        <input type="text" id="inputSteamName" class="form-control" placeholder="Steam name">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="inputSteamPassword">Steam Password</label>
+                                    <div class="input-group">
+                                        <span class="input-group-addon"><i class="fa fa-lock"></i></span>
+                                        <input type="text" id="inputSteamPassword" class="form-control" placeholder="Steam password">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="checkEnabled">Enabled</label>
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" id="checkEnabled">
+                                            Enabled
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="checkIsBotAccount">IsBotAccount</label>
+                                    <div class="checkbox">
+                                        <label>
+                                            <input type="checkbox" id="checkIsBotAccount">
+                                            IsBotAccount
+                                        </label>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                        <div class="tab-pane" id="configGenerator">
+                            <div class="callout callout-info margin">
+                                <h4><i class="icon fa fa-info"></i> Not implemented</h4>
+                                <p>This feature has not been implemented yet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="box-footer">
+                        <!--<button type="submit" class="btn btn-default">Cancel</button>-->
+                        <button type="submit" class="btn btn-default pull-right">Save</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Main Footer -->
+        <footer class="main-footer">
+            <div class="pull-right" id="version"><b>Version</b> 0.0.0.0</div>
+            <strong>
+                <a href="https://github.com/JustArchi/ArchiSteamFarm">GitHub</a> -
+                <a href="https://github.com/JustArchi/ArchiSteamFarm/wiki">Wiki</a> -
+                <a href="https://github.com/JustArchi/ArchiSteamFarm/commits/master">Changelog</a>
+            </strong>
+        </footer>
+
+        <!-- Control Sidebar -->
+        <aside class="control-sidebar control-sidebar-dark">
+            <!-- Tab panes -->
+            <div class="tab-content">
+                <!-- Tab content -->
+                <div class="tab-pane" id="control-right-sidebar"></div>
+            </div>
+        </aside>
+
+        <!-- Add the sidebar's background. This div must be placed
+        immediately after the control sidebar -->
+        <div class="control-sidebar-bg"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-sweetalert/1.0.1/sweetalert.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.2/js/adminlte.min.js"></script>
+    <script src="../js/app.js"></script>
+    <script>
+        $(function () {
+            'use strict';
+
+            $('.box-tools').ready(function () {
+                // Fill drop down with all bots
+                $.ajax({
+                    url: "/Api/Bot/ASF",
+                    type: "GET",
+                    success: function (data) {
+                        var json = data["Result"];
+
+                        $(".box-title").text("Currently editing: " + json[0].BotName);
+
+                        for (var i = 0; i < json.length; i++) {
+                            var botName = json[i].BotName;
+
+                            if (i === 0) {
+                                $("#botsDropDownManager").append('<li class="active"><a href="#" onclick="#">' + botName + '</a></li>');
+                            } else {
+                                $("#botsDropDownManager").append('<li><a href="#" onclick="#">' + botName + '</a></li>');
+                            }
+                        }
+                    }
+                });
+            });
+        })
+    </script>
+</body>
+</html>

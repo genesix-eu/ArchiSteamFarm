@@ -4,7 +4,7 @@
 //  / ___ \ | |  | (__ | | | || | ___) || |_|  __/| (_| || | | | | ||  _|| (_| || |   | | | | | |
 // /_/   \_\|_|   \___||_| |_||_||____/  \__|\___| \__,_||_| |_| |_||_|   \__,_||_|   |_| |_| |_|
 // 
-//  Copyright 2015-2017 Łukasz "JustArchi" Domeradzki
+//  Copyright 2015-2018 Łukasz "JustArchi" Domeradzki
 //  Contact: JustArchi@JustArchi.net
 // 
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -895,14 +895,14 @@ namespace ArchiSteamFarm {
 
 		private async Task<bool> IsPlayableGame(Game game) {
 			(uint playableAppID, DateTime ignoredUntil) = await Bot.GetAppDataForIdling(game.AppID, game.HoursPlayed).ConfigureAwait(false);
-			if (playableAppID != 0) {
-				game.PlayableAppID = playableAppID;
-				return true;
+			if (playableAppID == 0) {
+				IgnoredAppIDs[game.AppID] = ignoredUntil < DateTime.MaxValue ? ignoredUntil : DateTime.UtcNow.AddHours(HoursToIgnore);
+				Bot.ArchiLogger.LogGenericInfo(string.Format(Strings.IdlingGameNotPossible, game.AppID, game.GameName));
+				return false;
 			}
 
-			IgnoredAppIDs[game.AppID] = ignoredUntil != DateTime.MaxValue ? ignoredUntil : DateTime.UtcNow.AddHours(HoursToIgnore);
-			Bot.ArchiLogger.LogGenericInfo(string.Format(Strings.IdlingGameNotPossible, game.AppID, game.GameName));
-			return false;
+			game.PlayableAppID = playableAppID;
+			return true;
 		}
 
 		private async Task<bool?> ShouldFarm(Game game) {
@@ -969,7 +969,9 @@ namespace ArchiSteamFarm {
 
 					foreach (Game game in GamesToFarm) {
 						DateTime redeemDate = DateTime.MinValue;
-						if (Program.GlobalDatabase.AppIDsToPackageIDs.TryGetValue(game.AppID, out ConcurrentHashSet<uint> packageIDs)) {
+						HashSet<uint> packageIDs = Program.GlobalDatabase.GetPackageIDs(game.AppID);
+
+						if (packageIDs != null) {
 							foreach (uint packageID in packageIDs) {
 								if (!Bot.OwnedPackageIDs.TryGetValue(packageID, out (EPaymentMethod PaymentMethod, DateTime TimeCreated) packageData)) {
 									continue;
